@@ -263,6 +263,20 @@
             <button onclick="openRates()" class="btn btn-orange">Rates</button>
             <button onclick="resetAll()" class="btn btn-red">New</button>
             <button onclick="downloadPDF()" class="btn btn-purple">HD PDF</button>
+            <button onclick="saveBillToHistory(true)" class="btn btn-green">💾 Save Bill</button>
+            <button onclick="openBillHistory()" class="btn btn-blue">🕘 Bills</button>
+        </div>
+    </div>
+
+    <!-- BILLS HISTORY MODAL -->
+    <div id="billsModal" class="modal-overlay">
+        <div class="modal-box" style="max-width:500px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="margin:0;">Saved Bills</h3>
+                <button onclick="closeBills()" class="btn btn-red" style="padding:6px 15px;">X</button>
+            </div>
+            <div id="billsBody" style="max-height:60vh; overflow-y:auto;"></div>
+            <div style="text-align:center; margin-top:12px;"><button onclick="closeBills()" class="btn btn-gray" style="padding:10px 20px;">Close</button></div>
         </div>
     </div>
 
@@ -512,6 +526,7 @@
 
     // --- GUARANTEED PDF DOWNLOAD ENGINE ---
     function downloadPDF() {
+        saveBillToHistory(false);
         const appElement = document.getElementById('invoiceApp');
         
         window.scrollTo(0, 0); 
@@ -659,6 +674,87 @@
             rates: rates
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    /* ============ BILL HISTORY ============ */
+    const BILLS_KEY = 'alumCalcBillHistoryV1';
+    function getBillHistory() {
+        try { return JSON.parse(localStorage.getItem(BILLS_KEY) || '[]'); } catch(e) { return []; }
+    }
+    function persistBillHistory(bills) {
+        try { localStorage.setItem(BILLS_KEY, JSON.stringify(bills)); } catch(e) {}
+    }
+    function captureBillData() {
+        return {
+            quoteNo: document.getElementById('quoteNo').value,
+            cust: document.getElementById('cust').value,
+            addr: document.getElementById('addr').value,
+            custContact: document.getElementById('custContact').value,
+            date: document.getElementById('date').value,
+            validDate: document.getElementById('validDate').value,
+            labour: document.getElementById('vLabour').value,
+            freight: document.getElementById('vFreight').value,
+            prev: document.getElementById('vPrev').value,
+            paid: document.getElementById('vPaid').value,
+            rows: JSON.parse(JSON.stringify(rows))
+        };
+    }
+    function saveBillToHistory(manual) {
+        if (rows.length === 0) { if (manual) alert("No items to save."); return; }
+        const bills = getBillHistory();
+        const fp = JSON.stringify(rows);
+        if (bills.length > 0 && bills[0].fingerprint === fp) return;
+        const data = captureBillData();
+        bills.unshift({
+            id: 'bill-' + Date.now(),
+            date: new Date().toLocaleDateString('en-GB'),
+            time: new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}),
+            quoteNo: data.quoteNo || '',
+            customer: data.cust || 'Walk-in Customer',
+            grandTotal: document.getElementById('tGrand').innerText,
+            itemCount: rows.length,
+            fingerprint: fp,
+            data: data
+        });
+        persistBillHistory(bills);
+        if (manual) alert("Bill saved!");
+        renderBillHistory();
+    }
+    function openBillHistory() {
+        renderBillHistory();
+        document.getElementById('billsModal').classList.add('active');
+    }
+    function closeBills() { document.getElementById('billsModal').classList.remove('active'); }
+    function renderBillHistory() {
+        const bills = getBillHistory();
+        const body = document.getElementById('billsBody');
+        if (bills.length === 0) {
+            body.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:30px;">No saved bills yet.</p>';
+            return;
+        }
+        body.innerHTML = bills.map(b =>
+            '<div style="border:1px solid #e2e8f0; border-radius:12px; padding:12px; margin-bottom:10px; background:#f8fafc;">' +
+            '<div style="display:flex; justify-content:space-between; margin-bottom:4px;"><b>' + escapeHtml(b.customer) + '</b>' +
+            '<span style="font-size:11px; color:#64748b;">' + b.date + ' ' + b.time + '</span></div>' +
+            '<div style="font-size:12px; color:#64748b; margin-bottom:8px;">' + b.itemCount + ' items &middot; <b style="color:#0f172a;">' + escapeHtml(b.grandTotal) + '</b></div>' +
+            '<div style="display:flex; gap:8px;"><button onclick="loadBillFromHistory(\'' + b.id + '\')" class="btn btn-blue" style="flex:1; padding:8px;">Open</button>' +
+            '<button onclick="deleteBillFromHistory(\'' + b.id + '\')" class="btn btn-red" style="flex:1; padding:8px;">Delete</button></div></div>'
+        ).join('');
+    }
+    function escapeHtml(t) { return String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function loadBillFromHistory(id) {
+        const bill = getBillHistory().find(b => b.id === id);
+        if (!bill) return;
+        const d = bill.data;
+        ['quoteNo','cust','addr','custContact','date','validDate'].forEach(k => { const el = document.getElementById(k); if (el) el.value = d[k] || ''; });
+        ['vLabour','vFreight','vPrev','vPaid'].forEach(k => { const el = document.getElementById(k); if (el) el.value = d[k] || ''; });
+        rows = d.rows || [];
+        renderTable(); calcTotal(); save(); closeBills();
+        window.scrollTo(0, 0);
+    }
+    function deleteBillFromHistory(id) {
+        persistBillHistory(getBillHistory().filter(b => b.id !== id));
+        renderBillHistory();
     }
 
     function loadForm(data) {
